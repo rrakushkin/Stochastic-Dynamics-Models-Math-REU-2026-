@@ -179,5 +179,5 @@ if __name__ == "__main__":
     fig, D = plot_cluster(sites, Rg_history, N)
     print(f"Particles: {N}")
     print(f"Estimated fractal dimension D = {D:.3f}  (Witten-Sander: ~1.71)")
-    fig.savefig("dla.png", dpi=150)
+    fig.savefig("DLA_w_DimPlot.png", dpi=150)
     plt.show()
