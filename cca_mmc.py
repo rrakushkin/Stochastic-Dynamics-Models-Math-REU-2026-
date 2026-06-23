@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 
 # 4 nearest-neighbour displacements on the square lattice
 NEIGHBORS = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -139,26 +138,6 @@ class CCA:
         cm = pts.mean(axis=0)
         return np.sqrt(((pts - cm) ** 2).sum(axis=1).mean())
 
-    def size_distribution(self):
-        sizes = np.array([len(s) for s in self.clusters.values()])
-        return sizes
-
-    def fractal_dim_Rg(self, min_size=8):
-        """Fit s = a * R_g^Df  ->  log Rg vs log s, slope = 1/Df."""
-        s_list, rg_list = [], []
-        for sites in self.clusters.values():
-            s = len(sites)
-            if s >= min_size:
-                s_list.append(s)
-                rg_list.append(self.radius_of_gyration(sites))
-        if len(s_list) < 3:
-            return np.nan, (np.array(s_list), np.array(rg_list))
-        s_arr = np.array(s_list, float)
-        rg_arr = np.array(rg_list, float)
-        slope, _ = np.polyfit(np.log(s_arr), np.log(rg_arr), 1)
-        Df = 1.0 / slope
-        return Df, (s_arr, rg_arr)
-
     def box_count_Df(self, sites):
         """Box-counting dimension of one cluster's site set."""
         pts = np.array(list(sites))
@@ -253,37 +232,16 @@ def plot_cluster(sites, ax, title=None):
 def make_figure(out, fname="cca_results.png"):
     sim = out["sim"]
     snp = _best_snapshot(out["snapshots"])
-    fig, ax = plt.subplots(3, 2, figsize=(12, 14))
+    if snp is None:
+        raise ValueError("no snapshots recorded; increase sweeps or set dist_every > 0")
 
-    # (1) kinetics: N_c(t), mean size, largest cluster
+    fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+    fig.suptitle(f"Cluster–cluster aggregation  "
+                 f"(N={sim.N}, M={sim.M}, $\\phi$={sim.phi:.3f}, T*={sim.Tstar})",
+                 fontsize=14, fontweight="bold")
+
+    # (1) R_g vs s on the best snapshot, slope = 1/Df
     a = ax[0, 0]
-    a.loglog(out["t"], out["Nc"], label=r"$N_c(t)$")
-    a.loglog(out["t"], out["sbar"], label=r"$\langle s\rangle = M/N_c$")
-    a.loglog(out["t"], out["smax"], label=r"$s_{\max}$")
-    a.set_xlabel("sweeps (MCS)")
-    a.set_ylabel("count / size")
-    a.set_title(f"Kinetics  (N={sim.N}, M={sim.M}, T*={sim.Tstar})")
-    a.legend(); a.grid(True, which="both", alpha=.3)
-
-    # (2) polydisperse configuration at the snapshot used for scaling
-    a = ax[0, 1]
-    lab = snp["lattice"]
-    ids = np.unique(lab)
-    disp = np.zeros_like(lab)
-    k = 1
-    for cid in ids:
-        if cid == 0:
-            continue
-        disp[lab == cid] = (k % 19) + 1
-        k += 1
-    disp = np.ma.masked_where(disp == 0, disp)
-    a.imshow(disp, cmap="tab20", interpolation="nearest")
-    a.set_title(f"Config at sweep {snp['sweep']}: "
-                f"{(snp['sizes']>0).sum()} clusters")
-    a.set_xticks([]); a.set_yticks([])
-
-    # (3) R_g vs s on that snapshot, slope = 1/Df
-    a = ax[1, 0]
     Df, (s_arr, rg_arr) = _fit_Df_from_snapshot(snp["sizes"], snp["rgs"])
     if len(s_arr) >= 3:
         a.loglog(s_arr, rg_arr, "o", ms=4, alpha=.6)
@@ -298,10 +256,9 @@ def make_figure(out, fname="cca_results.png"):
     a.set_title(rf"Fractal scaling (sweep {snp['sweep']})")
     a.grid(True, which="both", alpha=.3)
 
-    # (4) box counting on the largest cluster of the FINAL state
+    # (2) box counting on the largest cluster of the FINAL state
     big = max(sim.clusters.values(), key=len)
-
-    a = ax[1, 1]
+    a = ax[0, 1]
     Df_box, bc = sim.box_count_Df(big)
     if bc is not None:
         eps_vals, counts = bc
@@ -313,12 +270,12 @@ def make_figure(out, fname="cca_results.png"):
     a.set_title(f"Box-counting, largest final cluster (s={len(big)})")
     a.grid(True, which="both", alpha=.3)
 
-    # (5) scatter plot of the largest final cluster itself
-    a = ax[2, 0]
+    # (3) scatter plot of the largest final cluster itself
+    a = ax[1, 0]
     plot_cluster(big, a, title=f"Largest final cluster (s={len(big)})")
 
-    # (6) binary mask of the largest final cluster
-    a = ax[2, 1]
+    # (4) binary mask of the largest final cluster
+    a = ax[1, 1]
     pts = np.array(list(big), dtype=int)
     mins = pts.min(axis=0)
     mask = np.zeros((pts[:, 0].max() - mins[0] + 1,
@@ -329,7 +286,7 @@ def make_figure(out, fname="cca_results.png"):
     a.set_xticks([]); a.set_yticks([])
 
     fig.tight_layout()
-    fig.savefig(fname, dpi=130)
+    fig.savefig(fname, dpi=150, bbox_inches="tight")
     return Df, Df_box
 
 

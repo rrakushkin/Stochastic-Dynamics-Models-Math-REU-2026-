@@ -16,15 +16,23 @@ Expected: D ~= 1.71 in 2D for large clusters.
 
 import math
 import random
+from typing import Callable
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 def run_dla(n_particles: int,
-            stick_prob: float = 1.0,
+            stick_prob: float | Callable[[int], float] = 1.0,
             seed: int | None = None) -> tuple[np.ndarray, list[float]]:
     """
     Grow a DLA cluster of n_particles on the 2D square lattice.
+
+    stick_prob may be either:
+      - a float in (0, 1]: constant sticking probability, or
+      - a callable f(n) -> probability, evaluated with the current cluster
+        size n at each contact. E.g. stick_prob=lambda n: 1.0 / n gives a
+        probability that decays as 1/N, so walkers penetrate deeper into the
+        cluster as it grows.
 
     Returns:
         sites: (N, 2) integer array of particle coordinates, in stick order
@@ -83,11 +91,23 @@ def run_dla(n_particles: int,
             ix = int(round(x))
             iy = int(round(y))
 
-            # Check if any neighbor is occupied -> stick (with prob stick_prob).
+            # If the walker has wandered onto an occupied site (possible when
+            # the stick probability is low and it keeps moving), step off
+            # rather than attaching a duplicate on top of an existing particle.
+            if (ix, iy) in cluster:
+                dx, dy = random.choice(neighbors)
+                x = ix + dx
+                y = iy + dy
+                continue
+
+            # Check if any neighbor is occupied -> stick (with prob p).
+            # p is either a constant or, for the 1/N variant, a function of
+            # the current cluster size n.
+            p = float(stick_prob(n) if callable(stick_prob) else stick_prob)
             stuck = False
             for dx, dy in neighbors:
                 if (ix + dx, iy + dy) in cluster:
-                    if stick_prob >= 1.0 or random.random() < stick_prob:
+                    if p >= 1.0 or random.random() < p:
                         stuck = True
                         break
 
@@ -136,18 +156,29 @@ def estimate_D(Rg_history: list[float], n_particles: int) -> float:
     return float(D)
 
 
-def plot_cluster(sites: np.ndarray, Rg_history: list[float], n_particles: int):
+def plot_cluster(sites: np.ndarray, Rg_history: list[float], n_particles: int,
+                 label: str = ""):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    if label:
+        fig.suptitle(label, fontsize=13)
 
-    # Color by attachment order to show screening.
-    order_idx = np.arange(len(sites))
-    sc = ax1.scatter(sites[:, 0], sites[:, 1], c=order_idx,
-                     cmap="viridis", s=2)
+    # Render as filled lattice cells, colored by attachment order (shows
+    # screening). imshow tiles each occupied node as a solid pixel, so the
+    # cluster looks like a connected aggregate rather than scattered dots.
+    xs, ys = sites[:, 0], sites[:, 1]
+    xmin, xmax = int(xs.min()), int(xs.max())
+    ymin, ymax = int(ys.min()), int(ys.max())
+    grid = np.full((ymax - ymin + 1, xmax - xmin + 1), np.nan)
+    grid[ys - ymin, xs - xmin] = np.arange(len(sites))
+
+    im = ax1.imshow(grid, origin="lower", cmap="viridis",
+                    interpolation="nearest",
+                    extent=[xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5])
     ax1.set_aspect("equal")
     ax1.set_title(f"DLA cluster, N = {len(sites)}")
     ax1.set_xlabel("x")
     ax1.set_ylabel("y")
-    plt.colorbar(sc, ax=ax1, label="stick order")
+    plt.colorbar(im, ax=ax1, label="stick order")
 
     # Log-log N vs R_g.
     Ns = np.arange(50, 50 * len(Rg_history), 50)[: len(Rg_history) - 1]
@@ -174,10 +205,26 @@ def plot_cluster(sites: np.ndarray, Rg_history: list[float], n_particles: int):
 
 
 if __name__ == "__main__":
+    # --- Standard DLA: stick on first contact (p = 1) ---
     N = 3000           # ~3k matches Fig. 4 of Sander & Ziff 1994
     sites, Rg_history = run_dla(N, stick_prob=1.0, seed=42)
-    fig, D = plot_cluster(sites, Rg_history, N)
-    print(f"Particles: {N}")
-    print(f"Estimated fractal dimension D = {D:.3f}  (Witten-Sander: ~1.71)")
+    fig, D = plot_cluster(sites, Rg_history, N,
+                          label="Standard DLA  (sticking probability p = 1)")
+    print("Standard DLA (p = 1)")
+    print(f"  Particles: {N}")
+    print(f"  Estimated fractal dimension D = {D:.3f}  (Witten-Sander: ~1.71)")
     fig.savefig("DLA_w_DimPlot.png", dpi=150)
+
+    # --- 1/N variant: sticking probability decays with cluster size ---
+    # p = 1/n means a walker needs ~n contacts to attach near the end, so
+    # growth is much slower; use a smaller N to keep runtime reasonable.
+    N2 = 3000
+    sites2, Rg_history2 = run_dla(N2, stick_prob=lambda n: 1.0 / n, seed=42)
+    fig2, D2 = plot_cluster(sites2, Rg_history2, N2,
+                            label="DLA with sticking probability p = 1/N")
+    print("\n1/N DLA (p = 1/n, n = current cluster size)")
+    print(f"  Particles: {N2}")
+    print(f"  Estimated fractal dimension D = {D2:.3f}")
+    fig2.savefig("DLA_1overN_DimPlot.png", dpi=150)
+
     plt.show()
