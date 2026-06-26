@@ -207,24 +207,12 @@ def plot_cluster(sites: np.ndarray, Rg_history: list[float], n_particles: int,
 if __name__ == "__main__":
     # --- Standard DLA: stick on first contact (p = 1) ---
     N = 3000           # ~3k matches Fig. 4 of Sander & Ziff 1994
-    sites, Rg_history = run_dla(N, stick_prob=1.0, seed=42)
+    sites, Rg_history = run_dla(N, stick_prob=1, seed=42)
     fig, D = plot_cluster(sites, Rg_history, N,
                           label="Standard DLA  (sticking probability p = 1)")
     print("Standard DLA (p = 1)")
     print(f"  Particles: {N}")
     print(f"  Estimated fractal dimension D = {D:.3f}  (Witten-Sander: ~1.71)")
     fig.savefig("DLA_w_DimPlot.png", dpi=150)
-
-    # --- 1/N variant: sticking probability decays with cluster size ---
-    # p = 1/n means a walker needs ~n contacts to attach near the end, so
-    # growth is much slower; use a smaller N to keep runtime reasonable.
-    N2 = 3000
-    sites2, Rg_history2 = run_dla(N2, stick_prob=lambda n: 1.0 / n, seed=42)
-    fig2, D2 = plot_cluster(sites2, Rg_history2, N2,
-                            label="DLA with sticking probability p = 1/N")
-    print("\n1/N DLA (p = 1/n, n = current cluster size)")
-    print(f"  Particles: {N2}")
-    print(f"  Estimated fractal dimension D = {D2:.3f}")
-    fig2.savefig("DLA_1overN_DimPlot.png", dpi=150)
 
     plt.show()
